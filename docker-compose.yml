@@ -1,0 +1,94 @@
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:latest
+    container_name: namenode
+    platform: linux/amd64
+    environment:
+      - CLUSTER_NAME=lab2-hadoop
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - namenode-data:/hadoop/dfs/name
+      - ./data/dataset.parquet:/hadoop/dataset.parquet:ro
+    networks:
+      - hadoop_network
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    platform: linux/amd64
+    environment:
+      - CLUSTER_NAME=lab2-hadoop
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    depends_on:
+      - namenode
+    volumes:
+      - /hadoop/dfs/data
+    networks:
+      - hadoop_network
+
+  spark:
+    image: bde2020/spark-master:3.1.1-hadoop3.2
+    container_name: spark
+    environment:
+      - INIT_DAEMON_STEP=setup_spark
+      - SPARK_MASTER=spark://spark:7077
+      - PYSPARK_PYTHON=/usr/bin/python3
+      - PYSPARK_DRIVER_PYTHON=/usr/bin/python3
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    depends_on:
+      - namenode
+      - datanode
+    networks:
+      - hadoop_network
+
+  spark-app:
+    image: lab-2-hadoop-spark-app:latest
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: spark-app
+    depends_on:
+      - spark
+      - namenode
+      - datanode
+    environment:
+      - SPARK_MASTER_URL=spark://spark:7077
+      - DATASET_PATH=hdfs://namenode:9000/user/hadoop/dataset.parquet
+      - RESULT_JSON_PATH=/opt/spark-app/results.json
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - sleep infinity
+    stdin_open: true
+    tty: true
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./app:/opt/spark-app
+    networks:
+      - hadoop_network
+
+  spark-worker:
+    image: bde2020/spark-worker:3.1.1-hadoop3.2
+    platform: linux/amd64
+    container_name: spark-worker
+    environment:
+      - SPARK_MASTER=spark://spark:7077
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=1g
+    depends_on:
+      - spark
+    networks:
+      - hadoop_network
+
+networks:
+  hadoop_network:
+    driver: bridge
+
+volumes:
+  namenode-data:
