@@ -16,6 +16,7 @@ class Args(Tap):
     input_dir: Path = Path("data/results")
     output_dir: Path = Path("data/results/charts")
 
+
 def configure_plot_style() -> None:
     import matplotlib.pyplot as plt
 
@@ -132,7 +133,7 @@ def create_memory_series_plot(
 
 
 def main() -> None:
-    args = Args().parse_args()
+    args = Args(underscores_to_dashes=True).parse_args()
     configure_plot_style()
 
     result_files = discover_result_files(args.input_dir)
