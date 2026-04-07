@@ -47,6 +47,7 @@ services:
 
   spark-app:
     image: lab-2-hadoop-spark-app:latest
+#    image: vasilisablyudova/lab-2-hadoop:spark-app
     build:
       context: ./app
       dockerfile: Dockerfile
