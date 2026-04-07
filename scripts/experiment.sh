@@ -7,9 +7,6 @@ readonly RESULTS_PATH_IN_CONTAINER="/opt/spark-app/results.json"
 readonly RESULTS_PATH_ON_HOST="./app/results.json"
 readonly RESULTS_DIR="./data/results"
 
-compose() {
-  docker compose "$@"
-}
 
 check_prerequisites() {
   if [ ! -f "${DATASET_LOCAL_PATH}" ]; then
@@ -102,10 +99,10 @@ start_cluster() {
   local datanode_count="${1}"
 
   echo "Building spark-app image..."
-  compose build spark-app
+  docker compose build spark-app
 
   echo "Starting cluster with ${datanode_count} DataNode(s)..."
-  compose up -d --scale datanode="${datanode_count}" namenode datanode spark spark-worker spark-app
+  docker compose up -d --scale datanode="${datanode_count}" namenode datanode spark spark-worker spark-app
 
   wait_for_namenode
   check_safemode
@@ -115,7 +112,7 @@ start_cluster() {
 
 stop_cluster() {
   echo "Stopping cluster..."
-  compose down -v
+  docker compose down -v
 }
 
 generate_charts() {
