@@ -71,9 +71,15 @@ For the `iampalina/nyc_taxi` dataset, the primary aggregation is:
 
 The application also records:
 
-- operation execution time
+- Spark session startup time
+- dataset read planning time
+- dataset inspection time
+- initial full scan time
+- optimization preparation time
+- query execution time
 - total runtime
-- final memory usage
+- final driver RSS memory usage
+- peak driver RSS memory usage
 - memory usage over time
 
 ## Requirements
@@ -180,30 +186,51 @@ docker compose exec spark-app /spark/bin/spark-submit \
 
 Each experiment writes benchmark metrics into JSON. Example fields:
 
-- `ops_time`: execution time of the main analytical operations
-- `total_time`: total runtime including read, setup, and overhead
-- `final_memory_usage`: RSS of the Python process near the end of execution
+- `ops_time`: compatibility alias for `query_time`
+- `query_time`: execution time of the analytical query itself
+- `spark_session_time`: Spark session startup cost
+- `read_time`: time to construct the Parquet read plan
+- `inspection_time`: time spent printing schema and preview rows
+- `initial_scan_time`: first full dataset scan (`count()`)
+- `optimization_time`: time spent on `repartition`, `cache`, and cache warm-up
+- `total_time`: full runtime from benchmark start to final result collection
+- `final_memory_usage`: final sampled RSS of the Python driver process
+- `peak_memory_usage`: peak sampled RSS of the Python driver process
 - `memory_usage_over_time`: time series for the memory plot
+
+Memory fields describe the Python driver process only. They do not represent full JVM or executor memory consumption.
 
 ## Generated Charts
 
-The chart tool creates four figures:
+The chart tool creates seven figures:
 
 ### `ops_time.png`
 
-Shows the execution time of the analytical part of the job only. This is the most useful chart for comparing the actual transformation and aggregation stage.
+Shows the execution time of the analytical query only.
 
 ### `total_time.png`
 
-Shows full end-to-end runtime, including reading the dataset, Spark overhead, and setup overhead. This is the best chart for understanding what a user actually pays for in a full run.
+Shows full runtime from benchmark start to final result collection.
 
 ### `final_memory_usage.png`
 
-Shows the final measured memory footprint of the Python process. This is not peak memory, only the value sampled near the end of execution.
+Shows the final sampled RSS of the Python driver process. This is not peak memory.
+
+### `peak_memory_usage.png`
+
+Shows the peak sampled RSS of the Python driver process during the run.
 
 ### `memory_usage_series.png`
 
-Shows memory usage over time for each experiment. This helps identify whether memory stays flat, grows gradually, or spikes during parts of the workload.
+Shows driver RSS over time for each experiment.
+
+### `runtime_breakdown.png`
+
+Shows a stacked breakdown of runtime by phase, including session startup, inspection, initial scan, optimization prep, and query execution.
+
+### `runtime_phase_share.png`
+
+Shows the same runtime phases normalized to percent of total runtime, which makes it easier to see where optimized runs spend extra time.
 
 ## Experimental Results
 

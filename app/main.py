@@ -67,6 +67,16 @@ def memory_monitor(
         time.sleep(interval)
 
 
+def get_latest_memory_usage(memory_usage_series: list[MemoryUsagePoint]) -> float:
+    return memory_usage_series[-1][1] if memory_usage_series else 0.0
+
+
+def get_peak_memory_usage(memory_usage_series: list[MemoryUsagePoint]) -> float:
+    if not memory_usage_series:
+        return 0.0
+    return max(memory for _, memory in memory_usage_series)
+
+
 def find_column(df: DataFrame, candidates: list[str]) -> str | None:
     columns_map = {column.lower(): column for column in df.columns}
     for candidate in candidates:
@@ -152,9 +162,19 @@ def main(
     dataset_path: str,
     spark_master: str,
 ) -> None:
+    benchmark_start_time = time.time()
+    memory_usage_series: list[MemoryUsagePoint] = []
+    stop_event = threading.Event()
+    monitor_thread = threading.Thread(
+        target=memory_monitor,
+        args=(memory_usage_series, stop_event, benchmark_start_time),
+    )
+    monitor_thread.start()
+
     try:
         result_json_path = Path(result_json_path)
 
+        spark_session_start = time.time()
         spark = (
             SparkSession.builder.appName("NYCTaxiSparkExperiment")
             .master(spark_master)
@@ -163,60 +183,74 @@ def main(
             .config("spark.executor.cores", "1")
             .getOrCreate()
         )
+        spark_session_time = time.time() - spark_session_start
 
         spark.sparkContext.setLogLevel("ERROR")
         print("Spark session created. Optimizations enabled:", optimize)
         print("Spark master:", spark_master)
 
-        start_time = time.time()
-        memory_usage_series: list[MemoryUsagePoint] = []
-        stop_event = threading.Event()
-        monitor_thread = threading.Thread(
-            target=memory_monitor,
-            args=(memory_usage_series, stop_event, start_time),
-        )
-        monitor_thread.start()
-
         print(f"Reading data from HDFS: {dataset_path}")
+        read_start = time.time()
         df = spark.read.parquet(dataset_path)
+        read_time = time.time() - read_start
 
+        inspection_start = time.time()
         print("Dataset schema:")
         df.printSchema()
         print("First rows:")
         df.show(10, truncate=False)
+        inspection_time = time.time() - inspection_start
 
+        initial_scan_start = time.time()
         count_initial = df.count()
+        initial_scan_time = time.time() - initial_scan_start
         print(f"Number of rows in the dataset: {count_initial}")
 
+        optimization_time = 0.0
         if optimize:
             print("Applying optimizations: repartition and cache")
+            optimization_start = time.time()
             df = df.repartition(4)
             df.cache()
             df.count()
+            optimization_time = time.time() - optimization_start
 
-        t_opt_start = time.time()
+        query_start = time.time()
 
         metrics_df = build_taxi_metrics(df)
         preview_results = metrics_df.collect()
         print("Aggregation results:")
         print(preview_results[:5])
 
-        t1 = time.time()
-        elapsed_operations = t1 - t_opt_start
-        elapsed_total = t1 - start_time
+        query_time = time.time() - query_start
+        elapsed_total = time.time() - benchmark_start_time
+        print(f"Spark session startup time: {spark_session_time:.2f} seconds")
+        print(f"Dataset read planning time: {read_time:.2f} seconds")
+        print(f"Dataset inspection time: {inspection_time:.2f} seconds")
+        print(f"Initial scan time: {initial_scan_time:.2f} seconds")
+        print(f"Optimization prep time: {optimization_time:.2f} seconds")
+        print(f"Query execution time: {query_time:.2f} seconds")
         print(f"Total execution time: {elapsed_total:.2f} seconds")
-        print(f"Execution time for operations after optimization: {elapsed_operations:.2f} seconds")
 
         stop_event.set()
         monitor_thread.join()
 
-        final_mem_usage = memory_usage_series[-1][1] if memory_usage_series else 0.0
-        print("Final memory usage: {:.2f} MB".format(final_mem_usage))
+        final_mem_usage = get_latest_memory_usage(memory_usage_series)
+        peak_mem_usage = get_peak_memory_usage(memory_usage_series)
+        print("Final driver RSS memory usage: {:.2f} MB".format(final_mem_usage))
+        print("Peak driver RSS memory usage: {:.2f} MB".format(peak_mem_usage))
 
         results_data: ExperimentResults = {
-            "ops_time": elapsed_operations,
+            "ops_time": query_time,
+            "query_time": query_time,
             "total_time": elapsed_total,
+            "spark_session_time": spark_session_time,
+            "read_time": read_time,
+            "inspection_time": inspection_time,
+            "initial_scan_time": initial_scan_time,
+            "optimization_time": optimization_time,
             "final_memory_usage": final_mem_usage,
+            "peak_memory_usage": peak_mem_usage,
             "memory_usage_over_time": memory_usage_series,
         }
 
@@ -237,6 +271,9 @@ def main(
         print("An error occurred while running the Spark application:")
         print(error)
         raise SystemExit(1)
+    finally:
+        stop_event.set()
+        monitor_thread.join(timeout=1)
 
 
 if __name__ == "__main__":

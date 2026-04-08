@@ -7,9 +7,26 @@ BAR_COLORS = {
     "ops_time": "#4C78A8",
     "total_time": "#F58518",
     "final_memory_usage": "#54A24B",
+    "peak_memory_usage": "#E45756",
 }
 
 LINE_COLORS = ["#4C78A8", "#F58518", "#E45756", "#72B7B2", "#B279A2", "#FF9DA6"]
+PHASE_COLORS = {
+    "spark_session_time": "#4C78A8",
+    "read_time": "#72B7B2",
+    "inspection_time": "#F58518",
+    "initial_scan_time": "#ECA82C",
+    "optimization_time": "#E45756",
+    "query_time": "#54A24B",
+}
+PHASE_LABELS = {
+    "spark_session_time": "Spark session",
+    "read_time": "Read plan",
+    "inspection_time": "Inspect",
+    "initial_scan_time": "Initial scan",
+    "optimization_time": "Optimization prep",
+    "query_time": "Query",
+}
 
 
 class Args(Tap):
@@ -132,6 +149,87 @@ def create_memory_series_plot(
     save_figure(output_dir, "memory_usage_series.png", dpi)
 
 
+def create_stacked_phase_plot(
+    experiment_keys: list[str],
+    data: dict[str, dict],
+    output_dir: Path,
+    dpi: int = 300,
+) -> None:
+    import matplotlib.pyplot as plt
+
+    fig, axis = plt.subplots(figsize=(11, 6.5))
+    bottom = [0.0] * len(experiment_keys)
+
+    for phase_key in PHASE_LABELS:
+        values = [float(data[key].get(phase_key, 0.0)) for key in experiment_keys]
+        axis.bar(
+            experiment_keys,
+            values,
+            bottom=bottom,
+            label=PHASE_LABELS[phase_key],
+            color=PHASE_COLORS[phase_key],
+            width=0.68,
+            edgecolor="#FFFFFF",
+        )
+        bottom = [current + value for current, value in zip(bottom, values)]
+
+    for index, total in enumerate(bottom):
+        axis.text(
+            index,
+            total,
+            f"{total:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=10,
+            color="#2F2A24",
+        )
+
+    axis.set_xlabel("Experiment")
+    axis.set_ylabel("Time (seconds)")
+    axis.set_title("Runtime breakdown by execution phase", pad=14)
+    axis.legend(title="Phase", ncols=2)
+
+    save_figure(output_dir, "runtime_breakdown.png", dpi)
+
+
+def create_phase_share_plot(
+    experiment_keys: list[str],
+    data: dict[str, dict],
+    output_dir: Path,
+    dpi: int = 300,
+) -> None:
+    import matplotlib.pyplot as plt
+
+    fig, axis = plt.subplots(figsize=(11, 6.5))
+    bottom = [0.0] * len(experiment_keys)
+
+    for phase_key in PHASE_LABELS:
+        raw_values = [float(data[key].get(phase_key, 0.0)) for key in experiment_keys]
+        shares = []
+        for experiment_key, raw_value in zip(experiment_keys, raw_values):
+            total = float(data[experiment_key].get("total_time", 0.0))
+            shares.append((raw_value / total * 100.0) if total else 0.0)
+
+        axis.bar(
+            experiment_keys,
+            shares,
+            bottom=bottom,
+            label=PHASE_LABELS[phase_key],
+            color=PHASE_COLORS[phase_key],
+            width=0.68,
+            edgecolor="#FFFFFF",
+        )
+        bottom = [current + value for current, value in zip(bottom, shares)]
+
+    axis.set_xlabel("Experiment")
+    axis.set_ylabel("Share of total runtime (%)")
+    axis.set_title("Runtime phase share by experiment", pad=14)
+    axis.set_ylim(0, 100)
+    axis.legend(title="Phase", ncols=2)
+
+    save_figure(output_dir, "runtime_phase_share.png", dpi)
+
+
 def main() -> None:
     args = Args(underscores_to_dashes=True).parse_args()
     configure_plot_style()
@@ -147,6 +245,10 @@ def main() -> None:
     ops_times = [data[key]["ops_time"] for key in experiment_keys]
     total_times = [data[key]["total_time"] for key in experiment_keys]
     final_memory_usages = [data[key]["final_memory_usage"] for key in experiment_keys]
+    peak_memory_usages = [
+        float(data[key].get("peak_memory_usage", data[key]["final_memory_usage"]))
+        for key in experiment_keys
+    ]
 
     create_bar_plot(
         experiment_keys=experiment_keys,
@@ -170,12 +272,31 @@ def main() -> None:
         experiment_keys=experiment_keys,
         values=final_memory_usages,
         ylabel="Memory usage (MB)",
-        title="Final memory usage by experiment",
+        title="Final driver RSS memory usage by experiment",
         filename="final_memory_usage.png",
         color=BAR_COLORS["final_memory_usage"],
         output_dir=args.output_dir,
     )
+    create_bar_plot(
+        experiment_keys=experiment_keys,
+        values=peak_memory_usages,
+        ylabel="Memory usage (MB)",
+        title="Peak driver RSS memory usage by experiment",
+        filename="peak_memory_usage.png",
+        color=BAR_COLORS["peak_memory_usage"],
+        output_dir=args.output_dir,
+    )
     create_memory_series_plot(
+        experiment_keys=experiment_keys,
+        data=data,
+        output_dir=args.output_dir,
+    )
+    create_stacked_phase_plot(
+        experiment_keys=experiment_keys,
+        data=data,
+        output_dir=args.output_dir,
+    )
+    create_phase_share_plot(
         experiment_keys=experiment_keys,
         data=data,
         output_dir=args.output_dir,
