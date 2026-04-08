@@ -143,9 +143,9 @@ run_experiment_group() {
 }
 
 main() {
-  check_prerequisites
-  run_experiment_group 1
-  run_experiment_group 3
+  # check_prerequisites
+  # run_experiment_group 1
+  # run_experiment_group 3
   generate_charts
 
   echo "==================================================="

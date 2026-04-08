@@ -1,4 +1,3 @@
 venv/
 data/
-!data/results/
 *.pyc

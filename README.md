@@ -1,109 +1,100 @@
 # Hadoop + Spark Taxi Benchmark
 
-This project benchmarks a small Spark analytics job on top of an HDFS-backed Docker Compose environment. It downloads the `iampalina/nyc_taxi` dataset, stores it as Parquet, uploads it to HDFS, runs the same Spark job under several configurations, saves benchmark metrics as JSON, and generates charts from the collected results. The core idea is to compare:
+This is a small course project where the same Spark job is run under a few different configurations and then compared by time and memory usage.
 
-- `plain` execution vs. `opt` execution
-- `1` DataNode vs. `3` DataNodes
+The main comparisons are:
 
-The Spark job reads a Parquet dataset from HDFS and computes taxi fare metrics grouped primarily by `passenger_count`.
+- `plain` vs `opt`
+- `1` DataNode vs `3` DataNodes
+
+The dataset comes from `iampalina/nyc_taxi`. It is downloaded locally as Parquet, uploaded to HDFS, and then used as the input for a simple Spark aggregation job.
+
+## What's in the project
+
+- [docker-compose.yml](/Users/artyomtugaryov/Development/repositories/dear/lab-2-hadoop/docker-compose.yml) starts the HDFS and Spark services
+- [app/main.py](/Users/artyomtugaryov/Development/repositories/dear/lab-2-hadoop/app/main.py) runs the Spark job and saves benchmark metrics
+- [scripts/experiment.sh](/Users/artyomtugaryov/Development/repositories/dear/lab-2-hadoop/scripts/experiment.sh) runs the full experiment set
+- [tools/download_dataset.py](/Users/artyomtugaryov/Development/repositories/dear/lab-2-hadoop/tools/download_dataset.py) downloads the dataset
+- [tools/plot_charts.py](/Users/artyomtugaryov/Development/repositories/dear/lab-2-hadoop/tools/plot_charts.py) builds charts from the JSON results
+- `data/results/` stores benchmark JSON files
+- `data/results/charts/` stores generated chart images
+
+## Setup overview
+
+The `docker-compose` setup includes:
+
+- `namenode`
+- `datanode`
+- `spark`
+- `spark-worker`
+- `spark-app`
+
+One important detail: there is only one Spark worker in this setup. The experiments change the number of HDFS DataNodes, not the number of Spark workers. So moving from `1` to `3` DataNodes changes storage topology and HDFS behavior, but it does not add Spark compute capacity.
+
+## What the Spark job does
+
+The job in [app/main.py](/Users/artyomtugaryov/Development/repositories/dear/lab-2-hadoop/app/main.py) does the following:
+
+1. Creates a `SparkSession`
+2. Reads the Parquet dataset from HDFS
+3. Prints the schema and a few sample rows
+4. Runs an initial `count()`
+5. In `opt` mode, also runs:
+   - `repartition(4)`
+   - `cache()`
+   - a cache warm-up `count()`
+6. Builds the final aggregation
+
+For this taxi dataset, the main path is:
+
+- group by `passenger_count`
+- compute `trip_count`
+- compute `avg_fare_amount`
+- compute `max_fare_amount`
+
+If those columns are missing, the code falls back to other available columns.
+
+## What gets measured
+
+Each run writes a JSON entry with benchmark metrics. The main fields are:
+
+- `ops_time`: compatibility alias for `query_time`
+- `query_time`: time spent on the main analytical query
+- `spark_session_time`: time spent creating the `SparkSession`
+- `read_time`: time spent building the Parquet read plan
+- `inspection_time`: time spent on `printSchema()` and `show()`
+- `initial_scan_time`: time spent on the first full `count()`
+- `optimization_time`: time spent on `repartition`, `cache`, and cache warm-up
+- `total_time`: full runtime from benchmark start to final result collection
+- `final_memory_usage`: last sampled RSS of the Python driver process
+- `peak_memory_usage`: highest sampled RSS of the Python driver process
+- `memory_usage_over_time`: time series used for the memory chart
+
+Important note: the memory metrics describe only the Python driver process. They are not the full Spark application memory footprint, because JVM and executor memory are not included.
 
 ## Dataset
 
-- Dataset page: <https://huggingface.co/datasets/iampalina/nyc_taxi>
+- source: <https://huggingface.co/datasets/iampalina/nyc_taxi>
+- format: Parquet
+- local file used by this project: `data/dataset.parquet`
 
-Relevant dataset characteristics used in this project:
-
-- Format: Parquet
-- Main split used here: `train`
-- Columns visible in the dataset viewer include `fare_amount`, `pickup_datetime`, `pickup_longitude`, `pickup_latitude`, `dropoff_longitude`, `dropoff_latitude`, and `passenger_count`
-
-This project downloads the dataset locally and stores it as:
-
-- `data/dataset.parquet`
-
-## Project Structure
-
-- [`docker-compose.yml`](docker-compose.yml) defines the HDFS and Spark services.
-- [`app`](app) contains the Spark application.
-- [`tools/download_dataset.py`](tools/download_dataset.py) downloads the dataset from Hugging Face.
-- [`scripts/experiment.sh`](scripts/experiment.sh) runs the benchmark scenarios.
-- [`tools/plot_charts.py`](tools/plot_charts.py) generates charts from JSON result files.
-- `data/results/` stores benchmark JSON outputs.
-- `data/results/charts/` stores generated charts.
-
-## Architecture
-
-The environment contains the following services:
-
-- `namenode`: HDFS NameNode
-- `datanode`: HDFS DataNode service, scalable via Docker Compose
-- `spark`: Spark master
-- `spark-worker`: Spark worker
-- `spark-app`: container used to run the benchmarked Spark application and to support debugging
-
-Important detail:
-
-- The current setup has one Spark worker.
-- The experiment changes the number of HDFS DataNodes, not the number of Spark workers.
-
-Because of that, changing from `1` to `3` DataNodes changes storage topology and HDFS behavior, but it does not increase Spark compute parallelism in the same way that adding Spark workers would.
-
-## What The Spark Job Does
-
-The Spark application in [`app`](app) performs the following steps:
-
-1. Connects to the Spark master.
-2. Reads the Parquet dataset from HDFS.
-3. Prints the schema and sample rows.
-4. Counts the rows.
-5. Optionally applies a simple optimization strategy:
-   - `repartition(4)`
-   - `cache()`
-6. Builds taxi metrics.
-
-For the `iampalina/nyc_taxi` dataset, the primary aggregation is:
-
-- group by `passenger_count`
-- compute:
-  - `trip_count`
-  - `avg_fare_amount`
-  - `max_fare_amount`
-
-The application also records:
-
-- Spark session startup time
-- dataset read planning time
-- dataset inspection time
-- initial full scan time
-- optimization preparation time
-- query execution time
-- total runtime
-- final driver RSS memory usage
-- peak driver RSS memory usage
-- memory usage over time
+The dataset includes columns such as `fare_amount`, `pickup_datetime`, `pickup_longitude`, `pickup_latitude`, `dropoff_longitude`, `dropoff_latitude`, and `passenger_count`.
 
 ## Requirements
 
-### System
-
 - Docker
 - Docker Compose
-- Internet access for downloading the dataset and building the Python image
+- internet access for downloading the dataset and building the Python image
 
-### Python Tools On Host
-
-Install the helper-tool dependencies from [`requiremetns.txt`](requiremetns.txt):
+Host-side Python dependencies are listed in [requiremetns.txt](/Users/artyomtugaryov/Development/repositories/dear/lab-2-hadoop/requiremetns.txt):
 
 ```bash
 python3 -m pip install -r requiremetns.txt
 ```
 
-These dependencies are used for:
+These are only needed for downloading the dataset and generating charts.
 
-- dataset download
-- chart generation
-
-## Quick Start
+## Quick start
 
 ### 1. Download the dataset
 
@@ -111,67 +102,53 @@ These dependencies are used for:
 python3 tools/download_dataset.py
 ```
 
-By default, the dataset is saved to:
+By default, it is saved as `data/dataset.parquet`.
 
-- `data/dataset.parquet`
-
-### 2. Build and start the cluster
+### 2. Start the cluster
 
 ```bash
 docker compose up -d
 ```
 
-Useful web UIs:
+Useful UIs:
 
-- HDFS NameNode UI: <http://localhost:9870>
-- Spark Master UI: <http://localhost:8080>
+- HDFS NameNode: <http://localhost:9870>
+- Spark Master: <http://localhost:8080>
 
-### 3. Run all benchmark experiments
+### 3. Run all experiments
 
 ```bash
 bash scripts/experiment.sh
 ```
 
-This script will:
+The script will:
 
 1. start the cluster with `1` DataNode
-2. upload the Parquet dataset to HDFS
-3. run:
-   - `1_plain`
-   - `1_opt`
+2. upload the dataset to HDFS
+3. run `1_plain` and `1_opt`
 4. save results to `data/results/results_1.json`
 5. restart the cluster with `3` DataNodes
-6. run:
-   - `3_plain`
-   - `3_opt`
+6. run `3_plain` and `3_opt`
 7. save results to `data/results/results_3.json`
-8. automatically generate charts in `data/results/charts`
+8. rebuild charts in `data/results/charts`
 
-After `bash scripts/experiment.sh` finishes, both benchmark JSON files and chart images are already available. In the usual workflow, you do not need to run the plotting tool separately.
+### 4. Rebuild charts manually
 
-### 4. Generate charts
-
-This step is optional, because `scripts/experiment.sh` already generates charts automatically. Run it only if you want to rebuild the figures from existing JSON files.
+This is usually not necessary, because `scripts/experiment.sh` already does it.
 
 ```bash
 python3 tools/plot_charts.py
 ```
 
-By default, charts are saved to:
-
-- `data/results/charts`
-
-You can also override paths:
+You can also override the paths:
 
 ```bash
 python3 tools/plot_charts.py --input-dir data/results --output-dir data/results/charts
 ```
 
-## Running The Spark App Manually
+## Running the Spark job manually
 
-The application container is kept alive with `sleep infinity`, so you can run Spark jobs manually inside it.
-
-Example:
+The `spark-app` container stays alive with `sleep infinity`, so the job can also be run manually:
 
 ```bash
 docker compose exec spark-app /spark/bin/spark-submit \
@@ -182,73 +159,71 @@ docker compose exec spark-app /spark/bin/spark-submit \
   --spark-master spark://spark:7077
 ```
 
-## Result Files
+## Charts
 
-Each experiment writes benchmark metrics into JSON. Example fields:
+These charts are generated from the JSON files in `data/results`.
 
-- `ops_time`: compatibility alias for `query_time`
-- `query_time`: execution time of the analytical query itself
-- `spark_session_time`: Spark session startup cost
-- `read_time`: time to construct the Parquet read plan
-- `inspection_time`: time spent printing schema and preview rows
-- `initial_scan_time`: first full dataset scan (`count()`)
-- `optimization_time`: time spent on `repartition`, `cache`, and cache warm-up
-- `total_time`: full runtime from benchmark start to final result collection
-- `final_memory_usage`: final sampled RSS of the Python driver process
-- `peak_memory_usage`: peak sampled RSS of the Python driver process
-- `memory_usage_over_time`: time series for the memory plot
+### The main two
 
-Memory fields describe the Python driver process only. They do not represent full JVM or executor memory consumption.
+`ops_time.png` shows only the analytical part of the workload. `total_time.png` shows the full run. In practice, these are usually the first two charts worth checking.
 
-## Generated Charts
-
-The chart tool creates seven figures:
-
-### `ops_time.png`
-
-Shows the execution time of the analytical query only.
+#### `ops_time.png`
 
 ![ops_time chart](data/results/charts/ops_time.png)
 
-### `total_time.png`
-
-Shows full runtime from benchmark start to final result collection.
+#### `total_time.png`
 
 ![total_time chart](data/results/charts/total_time.png)
 
-### `final_memory_usage.png`
+### Memory charts
 
-Shows the final sampled RSS of the Python driver process. This is not peak memory.
+`final_memory_usage.png` shows the last sampled RSS value for the Python driver. `peak_memory_usage.png` shows the highest sampled value. `memory_usage_series.png` is useful when the shape over time matters more than the final number.
+
+#### `final_memory_usage.png`
 
 ![final_memory_usage chart](data/results/charts/final_memory_usage.png)
 
-### `peak_memory_usage.png`
-
-Shows the peak sampled RSS of the Python driver process during the run.
+#### `peak_memory_usage.png`
 
 ![peak_memory_usage chart](data/results/charts/peak_memory_usage.png)
 
-### `memory_usage_series.png`
-
-Shows driver RSS over time for each experiment.
+#### `memory_usage_series.png`
 
 ![memory_usage_series chart](data/results/charts/memory_usage_series.png)
 
-### `runtime_breakdown.png`
+### Runtime breakdown charts
 
-Shows a stacked breakdown of runtime by phase, including session startup, inspection, initial scan, optimization prep, and query execution.
+These are helpful when the question is not just "which one is slower?" but "where exactly is the extra time going?"
+
+#### `runtime_breakdown.png`
+
+This chart shows absolute time by phase: Spark startup, read planning, inspection, initial scan, optimization preparation, and query execution.
 
 ![runtime_breakdown chart](data/results/charts/runtime_breakdown.png)
 
-### `runtime_phase_share.png`
+#### `runtime_phase_share.png`
 
-Shows the same runtime phases normalized to percent of total runtime, which makes it easier to see where optimized runs spend extra time.
+This chart shows the same phases, but normalized as percentages of the total runtime.
 
 ![runtime_phase_share chart](data/results/charts/runtime_phase_share.png)
 
-## Experimental Results
+## How to interpret the results
 
-The current result files in `data/results` contain the following values:
+With the current benchmark logic, `opt` is not guaranteed to be faster. In this project it does extra work:
+
+- `repartition(4)`
+- `cache()`
+- a separate cache warm-up pass
+
+If only one analytical query is executed after that, the preparation cost may not pay for itself. So seeing `opt` slower than `plain` is not surprising here.
+
+Also, going from `1` to `3` DataNodes does not add Spark workers, so there is no reason to expect a compute speedup from CPU parallelism alone.
+
+## Current results
+
+The most reliable numbers are the ones stored in the JSON files under `data/results`, because they change whenever the benchmark is rerun.
+
+At the time this README was last updated, the project contained these values:
 
 | Experiment | Ops time, s | Total time, s | Final memory, MB |
 |---|---:|---:|---:|
@@ -257,66 +232,23 @@ The current result files in `data/results` contain the following values:
 | `3_plain` | 58.61 | 111.57 | 36.90 |
 | `3_opt` | 93.61 | 627.23 | 31.75 |
 
-## Analysis
+If this table disagrees with the charts or JSON files, it just means the experiments were rerun and the README was not updated yet.
 
-### 1. The current “optimized” mode is slower in every measured scenario
+## Practical takeaways
 
-Compared with `plain` mode:
+- for the current job, `plain` looks more useful than `opt`
+- increasing the number of HDFS DataNodes alone does not improve Spark compute performance
+- if the goal is actual speedup, scaling Spark workers or executor resources makes more sense
+- memory conclusions should not be based only on `final_memory_usage`; `peak_memory_usage` and the full series matter too
 
-- `1_opt` is about `132.9%` slower than `1_plain` in `ops_time`
-- `1_opt` is about `321.6%` slower than `1_plain` in `total_time`
-- `3_opt` is about `59.7%` slower than `3_plain` in `ops_time`
-- `3_opt` is about `462.2%` slower than `3_plain` in `total_time`
+## Possible next steps
 
-Likely reason:
+- add more Spark workers and rerun the benchmark
+- measure JVM and executor memory, not only driver RSS
+- try different `repartition` values
+- run more than one analytical query so `cache()` has a real chance to help
+- generate the README results table automatically from the JSON files
 
-- the job reads the dataset once and performs one main aggregation
-- `repartition(4)` and `cache()` add extra work
-- the cache does not have enough reuse to pay back its cost
+## Small note
 
-This is an inference from the code in [`app/main.py`](app/main.py) and the measured results.
-
-### 2. Increasing HDFS DataNodes from 1 to 3 did not improve runtime
-
-The `plain` configuration got slower:
-
-- `1_plain` total time: `83.01 s`
-- `3_plain` total time: `111.57 s`
-
-The `opt` configuration also got slower:
-
-- `1_opt` total time: `350.01 s`
-- `3_opt` total time: `627.23 s`
-
-Likely reasons:
-
-- the benchmark increases the number of HDFS DataNodes, not Spark workers
-- Spark compute capacity remains effectively unchanged
-- additional HDFS distribution can introduce extra coordination and I/O overhead
-
-This is also an inference from the Compose topology and the measured numbers.
-
-### 3. Final memory usage is not enough to claim that optimization improved memory efficiency
-
-The optimized runs ended with a lower final memory number in some cases, but that metric is only the sampled value near the end of execution, not the peak usage. The memory time-series chart should be used together with `final_memory_usage` before drawing stronger conclusions.
-
-### 4. The most important practical conclusion
-
-For the current workload and topology:
-
-- `plain` mode is the best-performing mode
-- adding HDFS DataNodes alone is not a useful optimization for this benchmark
-- if the goal is better Spark performance, the next variable to scale should be Spark workers or executor resources, not only HDFS DataNodes
-
-## Suggested Next Steps
-
-- Add more than one Spark worker and repeat the benchmark.
-- Measure peak memory, not only final memory.
-- Separate dataset read time from aggregation time more explicitly.
-- Benchmark additional Spark settings such as partition counts and executor memory.
-- Extend the analysis with more domain-specific aggregations over `pickup_datetime` and `fare_amount`.
-
-## Notes
-
-- The root dependency file is named [`requiremetns.txt`](requiremetns.txt), which is slightly unusual but currently used as-is by the project.
-- The chart tool currently expects benchmark JSON files under `data/results`.
+The dependency file in the repository root is called `requiremetns.txt`. The name is unusual, but that is the file currently used by the project.

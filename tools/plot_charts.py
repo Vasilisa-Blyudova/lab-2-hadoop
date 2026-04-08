@@ -77,7 +77,7 @@ def save_figure(output_dir: Path, filename: str, dpi: int = 300) -> None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     save_path = output_dir / filename
-    plt.tight_layout()
+    plt.tight_layout(rect=(0, 0, 0.82, 1))
     plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
     plt.close()
     print(f"Saved plot: {save_path}")
@@ -101,6 +101,8 @@ def create_bar_plot(
     axis.set_xlabel("Experiment")
     axis.set_ylabel(ylabel)
     axis.set_title(title, pad=14)
+    axis.spines["top"].set_visible(False)
+    axis.spines["right"].set_visible(False)
 
     for bar, value in zip(bars, values):
         axis.text(
@@ -144,7 +146,7 @@ def create_memory_series_plot(
     axis.set_xlabel("Time (seconds)")
     axis.set_ylabel("Memory usage (MB)")
     axis.set_title("Memory usage over time", pad=14)
-    axis.legend(title="Experiment")
+    axis.legend(title="Experiment", loc="center left", bbox_to_anchor=(1.02, 0.5), borderaxespad=0.0)
 
     save_figure(output_dir, "memory_usage_series.png", dpi)
 
@@ -187,7 +189,9 @@ def create_stacked_phase_plot(
     axis.set_xlabel("Experiment")
     axis.set_ylabel("Time (seconds)")
     axis.set_title("Runtime breakdown by execution phase", pad=14)
-    axis.legend(title="Phase", ncols=2)
+    axis.spines["top"].set_visible(False)
+    axis.spines["right"].set_visible(False)
+    axis.legend(title="Phase", loc="center left", bbox_to_anchor=(1.02, 0.5), borderaxespad=0.0)
 
     save_figure(output_dir, "runtime_breakdown.png", dpi)
 
@@ -225,7 +229,9 @@ def create_phase_share_plot(
     axis.set_ylabel("Share of total runtime (%)")
     axis.set_title("Runtime phase share by experiment", pad=14)
     axis.set_ylim(0, 100)
-    axis.legend(title="Phase", ncols=2)
+    axis.spines["top"].set_visible(False)
+    axis.spines["right"].set_visible(False)
+    axis.legend(title="Phase", loc="center left", bbox_to_anchor=(1.02, 0.5), borderaxespad=0.0)
 
     save_figure(output_dir, "runtime_phase_share.png", dpi)
 
