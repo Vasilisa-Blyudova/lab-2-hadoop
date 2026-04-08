@@ -208,29 +208,43 @@ The chart tool creates seven figures:
 
 Shows the execution time of the analytical query only.
 
+![ops_time chart](data/results/charts/ops_time.png)
+
 ### `total_time.png`
 
 Shows full runtime from benchmark start to final result collection.
+
+![total_time chart](data/results/charts/total_time.png)
 
 ### `final_memory_usage.png`
 
 Shows the final sampled RSS of the Python driver process. This is not peak memory.
 
+![final_memory_usage chart](data/results/charts/final_memory_usage.png)
+
 ### `peak_memory_usage.png`
 
 Shows the peak sampled RSS of the Python driver process during the run.
+
+![peak_memory_usage chart](data/results/charts/peak_memory_usage.png)
 
 ### `memory_usage_series.png`
 
 Shows driver RSS over time for each experiment.
 
+![memory_usage_series chart](data/results/charts/memory_usage_series.png)
+
 ### `runtime_breakdown.png`
 
 Shows a stacked breakdown of runtime by phase, including session startup, inspection, initial scan, optimization prep, and query execution.
 
+![runtime_breakdown chart](data/results/charts/runtime_breakdown.png)
+
 ### `runtime_phase_share.png`
 
 Shows the same runtime phases normalized to percent of total runtime, which makes it easier to see where optimized runs spend extra time.
+
+![runtime_phase_share chart](data/results/charts/runtime_phase_share.png)
 
 ## Experimental Results
 
