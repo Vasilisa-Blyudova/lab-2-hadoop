@@ -1,4 +1,4 @@
-FROM bde2020/spark-master:3.1.1-hadoop3.2 AS python-builder
+FROM bde2020/spark-master:latest AS python-builder
 
 ENV PYTHON_VERSION=3.11.11
 
@@ -36,7 +36,7 @@ COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 
-FROM bde2020/spark-master:3.1.1-hadoop3.2
+FROM bde2020/spark-master:latest
 
 ENV PATH="/usr/local/bin:${PATH}"
 
